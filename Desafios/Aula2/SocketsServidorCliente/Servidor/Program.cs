@@ -3,62 +3,92 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-namespace Servidor
+namespace SocketServer
 {
     class Program
     {
         static void Main(string[] args)
         {
-            // Definir IP (localhost) e a Porta
-            IPAddress ipAd = IPAddress.Parse("127.0.0.1");
+            // Set the IP address (localhost) and Port number
+            IPAddress ipAddress = IPAddress.Parse("127.0.0.1");
             int port = 8080;
             
-            // Inicializar o Listener
-            TcpListener myList = new TcpListener(ipAd, port);
+            // Initialize the TCP Listener
+            TcpListener listener = new TcpListener(ipAddress, port);
 
             try
             {
-                // Iniciar a escuta
-                myList.Start();
-                Console.WriteLine("Servidor a correr na porta " + port);
-                Console.WriteLine("À espera de uma conexão...");
+                // Start listening for incoming connections
+                listener.Start();
+                Console.WriteLine($"Server is running on port {port}...");
+                Console.WriteLine("Waiting for a connection...");
 
-                // O programa bloqueia aqui até um cliente se conectar
-                Socket s = myList.AcceptSocket();
-                Console.WriteLine("Conexão aceite de " + s.RemoteEndPoint);
+                // Accept the incoming socket connection (Blocking call)
+                using Socket clientSocket = listener.AcceptSocket();
+                Console.WriteLine($"Connection accepted from {clientSocket.RemoteEndPoint}");
 
-                // Receber os dados do cliente
-                byte[] b = new byte[100];
-                int k = s.Receive(b);
+                // Buffer to store received data
+                byte[] buffer = new byte[1024];
+                int receivedBytes = clientSocket.Receive(buffer);
                 
-                // Traduzir os bytes para string (ex: "5,7")
-                string mensagemRecebida = Encoding.ASCII.GetString(b, 0, k);
-                Console.WriteLine("O Cliente enviou: " + mensagemRecebida);
+                // Convert bytes to string and trim any whitespace
+                string receivedMessage = Encoding.ASCII.GetString(buffer, 0, receivedBytes).Trim();
+                Console.WriteLine($"Client sent: {receivedMessage}");
 
-                // Lógica de negócio: Separar a string e somar
-                string[] numeros = mensagemRecebida.Split(',');
-                if (numeros.Length == 2 && int.TryParse(numeros[0], out int num1) && int.TryParse(numeros[1], out int num2))
+                string response = "";
+
+                // Split the message using '|' to separate Command from Data
+                string[] parts = receivedMessage.Split('|');
+                string command = parts[0].ToUpper();
+
+                // Logic to handle different commands
+                switch (command)
                 {
-                    int soma = num1 + num2;
-                    string resposta = $"A soma de {num1} e {num2} é: {soma}";
-                    
-                    // Converter a resposta para bytes e enviar
-                    ASCIIEncoding asen = new ASCIIEncoding();
-                    s.Send(asen.GetBytes(resposta));
-                    Console.WriteLine("Resposta enviada ao cliente.");
-                }
-                else
-                {
-                    s.Send(Encoding.ASCII.GetBytes("Erro: Formato inválido. Envia no formato 'numero,numero'."));
+                    case "SUM": // Operation: Sum two numbers
+                        if (parts.Length > 1)
+                        {
+                            string[] numbers = parts[1].Split(',');
+                            if (numbers.Length == 2 && int.TryParse(numbers[0], out int n1) && int.TryParse(numbers[1], out int n2))
+                            {
+                                response = $"The sum of {n1} and {n2} is: {n1 + n2}";
+                            }
+                            else 
+                            { 
+                                response = "Error: Invalid format. Use SUM|n1,n2"; 
+                            }
+                        }
+                        break;
+
+                    case "RANDOM": // Operation: Generate a random number
+                        Random rnd = new Random();
+                        response = $"Your random number is: {rnd.Next(1, 1001)}";
+                        break;
+
+                    case "DATE": // Operation: Get server local date and time
+                        response = $"Server local time: {DateTime.Now}";
+                        break;
+
+                    default:
+                        response = "Unknown command. Try: SUM|x,y , RANDOM| or DATE|";
+                        break;
                 }
 
-                // Limpar a casa (fechar ligações)
-                s.Close();
-                myList.Stop();
+                // Convert response to bytes and send it back to the client
+                byte[] responseData = Encoding.ASCII.GetBytes(response);
+                clientSocket.Send(responseData);
+                Console.WriteLine("Response sent to the client.");
+
+                // Close the client socket
+                clientSocket.Close();
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                Console.WriteLine("Erro: " + e.StackTrace);
+                Console.WriteLine($"Server Error: {ex.Message}");
+            }
+            finally
+            {
+                // Stop the listener
+                listener.Stop();
             }
         }
     }
